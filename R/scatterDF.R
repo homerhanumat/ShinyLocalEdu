@@ -35,205 +35,60 @@ scatterDF <-   function (form,data=parent.frame()) {
 
  df <- data.frame(x,y,z)
 
- if (is.numeric(z)) {
-
-   lowValue <- with(df,min(z))
-   highValue <- with(df,max(z))
-   initialValues <- c(lowValue,highValue)
-   middleValue <- median(z)
- } else { # to satisfy shiny
-   lowValue <- 0
-   highValue <- 100
-   initialValues <- c(0,100)
-   middleValue <- 50
- }
-
  otherColour <- "blue"
  selectColour <- "red"
  myColours <- c(otherColour,selectColour)
 
- ui.numerical <- shinyUI(fluidPage(
+ mod <- lm(y ~ x, data = df)
 
-   #  Application title
-   title="Scatterplot with Dynamic Facetting",
-   titlePanel("Scatterplot with Dynamic Facetting"),
 
-   fluidRow(
-     column(3,
-            checkboxInput(inputId = "nearest",
-                          label = paste("Work with nearest neighbors in",zname),
-                          value = FALSE),
-            conditionalPanel(
-              condition="input.nearest == false",
-              sliderInput(inputId="desired",
-                        label=paste("Range for", zname),
-                        min=lowValue,max=highValue,value=initialValues)
-            ),
-            conditionalPanel(
-              condition="input.nearest == true",
-              numericInput(inputId="percent",label="Percentage to Select",
-                           min=5,max=40,value=10,step=1),
-              sliderInput(inputId="center",
-                          label=paste("Central Value of", zname),
-                          min=lowValue,max=highValue,value=middleValue,
-                          animate=animationOptions(interval=1000,loop=TRUE))
-            ),
-            selectInput(
-              inputId="smoother",
-              label="Smoothing Method",
-              choices=c("line"="lm","loess/gam curve"="auto","none"="none"),
-              selected="lm")
+##################################################
+## begin ui and server
+#################################################
 
-            ),
+ ui <- basicPage(
+   plotOutput("condVar",
+              brush = brushOpts(id = "plot_brush", fill = "#ccc", direction = "x"),
+              height = 250
+   ),
+   plotOutput("scatter")
+ )
 
-     column(9,
-            plotOutput("plot")
-     )
+ server <- function(input, output) {
+
+   rv <- reactiveValues(
+     dfSelected = NULL
    )
 
- ))  #end fluidPage and and shinyUI
+   output$condVar <- renderPlot({
+     if ( is.numeric(df$z)) {
+      qplot(x = z, data = df, geom = "density")
+     } else qplot(x = z, data = df, geom = "bar")
+   })
 
- ui.factor <- shinyUI(fluidPage(
+   observeEvent(input$plot_brush,
+                {
+                  rv$dfSelected <- brushedPoints(df, input$plot_brush, xvar = "z")
+                }
+                )
 
-   #  Application title
-   title="Scatterplot with Dynamic Facetting",
-   titlePanel("Scatterplot with Dynamic Facetting"),
-
-   fluidRow(
-     column(3,
-
-            selectInput(
-              inputId="level",
-              label=paste("Value of",zname),
-              choices=levels(z)),
-
-            selectInput(
-              inputId="smoother",
-              label="Smoothing Method",
-              choices=c("line"="lm","loess/gam curve"="auto","none"="none"),
-              selected="lm"),
-
-            checkboxInput("animate","Animate",value=FALSE)
-
-     ),
-
-     column(9,
-            plotOutput("plot")
-     )
-   )
-
- ))
-
- server.numerical <- shinyServer(function(input, output,session) {
-
-   make_plot <- reactive({
-
-     if (input$nearest == TRUE) {
-
-       currentNum <- input$center
-       percentage <- input$percent
-       prop <- percentage/100
-       distances <- with(df,abs(currentNum-z))
-       sorted <- df[order(distances),]
-       lastPick <- floor(nrow(sorted)*prop)
-       subFrame <- sorted[1:lastPick,]
-       selected  <- c(rep("selected",lastPick),rep("other",nrow(sorted)-lastPick))
-       sorted$selected <- factor(selected)
-       df <- sorted
-
-     } else {
-
-      desiredRows <- with(df, z >= input$desired[1] & z <= input$desired[2])
-      subFrame <- subset(df,subset=desiredRows)
-      selected  <- ifelse(desiredRows,"selected","other")
-      df$selected <- factor(selected)
+   output$scatter <- renderPlot({
+     with(df, plot(x,y))
+     abline(coef(mod))
+     small <- rv$dfSelected
+     if ( ! is.null(small) ) {
+       with(small, points(x,y, pch = 19, col = "red"))
+       modSub <- lm(y ~ x, data = small)
+       abline(coef(modSub), lty = 2, lwd = 2, col = "red")
      }
-
-     if (input$smoother != "none") {
-
-      ggplot(df,aes(x=x,y=y)) + geom_point(aes(colour=selected,size=selected,fill=selected)) +
-        geom_smooth(method=input$smoother,se=FALSE,colour=otherColour) +
-        scale_fill_manual(values=myColours) +
-        scale_colour_manual(values=myColours) +
-        scale_size_manual(values=c(2,3)) +
-        geom_smooth(data=subFrame,method=input$smoother,se=FALSE,colour=selectColour) +
-        labs(x=xname,y=yname)
-
-     } else {
-
-       ggplot(df,aes(x=x,y=y)) + geom_point(aes(colour=selected,size=selected,fill=selected)) +
-         scale_fill_manual(values=myColours) +
-         scale_colour_manual(values=myColours) +
-         scale_size_manual(values=c(2,3)) +
-         labs(x=xname,y=yname)
-
-     }
-
    })
 
-   output$plot <- renderPlot({
-     make_plot()
-   })
-
- })
-
- server.factor <- shinyServer(function(input, output,session) {
-
-    n <- 1
-
-    observe({
-
-      if (input$animate) {
-        updateSelectInput(session,inputId="level",selected=levels(z)[n])
-      }
-
-    })
-
-   make_plot <- reactive({
-
-    desiredLevel <- input$level
-    subFrame <- subset(df,z == desiredLevel)
-    selected  <- ifelse(z == desiredLevel,"selected","other")
-    df$selected <- factor(selected)
-
-    if (input$animate) {
-      n <<- n+1
-      if (n > length(levels(z))) n <<- 1
-      updateSelectInput(session,inputId="level",selected=levels(z)[n])
-    }
-
-    if (input$smoother != "none") {
-
-      ggplot(df,aes(x=x,y=y)) + geom_point(aes(colour=selected,size=selected,fill=selected)) +
-        geom_smooth(method=input$smoother,se=FALSE,colour=otherColour) +
-        scale_fill_manual(values=myColours) +
-        scale_colour_manual(values=myColours) +
-        scale_size_manual(values=c(2,3)) +
-        geom_smooth(data=subFrame,method=input$smoother,se=FALSE,colour=selectColour) +
-        labs(x=xname,y=yname)
-
-    } else {
-
-      ggplot(df,aes(x=x,y=y)) + geom_point(aes(colour=selected,size=selected,fill=selected)) +
-        scale_fill_manual(values=myColours) +
-        scale_colour_manual(values=myColours) +
-        scale_size_manual(values=c(2,3)) +
-        labs(x=xname,y=yname)
-
-    }
-
-    }) # end make_plot
-
-   output$plot <- renderPlot({
-     make_plot()
-   })
-
- })
-
- if (is.numeric(z)) {
-  shiny::shinyApp(ui = ui.numerical, server = server.numerical)
- } else {
-   shiny::shinyApp(ui = ui.factor, server = server.factor)
  }
+
+#############################
+## knit the app
+###########################
+
+ shinyApp(ui = ui, server = server)
 
 } #end scatterDF
