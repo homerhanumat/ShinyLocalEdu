@@ -4,7 +4,8 @@
 #'
 #' @rdname scatterDF
 #' @usage scatterDF(form, data = parent.frame())
-#' @param form a formula, of the form y~x|z, where z is the facetting variable.
+#' @param form a formula, of the form y~x|z, where z is the facetting variable (must be
+#' numeric or a factor).
 #' @param data dataframe supplying variables for formula.  If variables in the formula are not found in the data,
 #' then they will be searched for in the parent environment.
 #' @return side effects
@@ -46,13 +47,18 @@ scatterDF <-   function (form,data=parent.frame()) {
 ## begin ui and server
 #################################################
 
- ui <- basicPage(
-   plotOutput("condVar",
-              brush = brushOpts(id = "plot_brush", fill = "#ccc", direction = "x"),
-              height = 250
-   ),
+ ui.numeric <- basicPage(
+   plotOutput("condVar1",
+              brush = brushOpts(id = "plot_brush", fill = "lightblue", direction = "x")
+              ),
    plotOutput("scatter")
  )
+
+ ui.factor <- basicPage(
+   plotOutput("condVar2",
+              click = clickOpts(id = "plot_click")),
+   plotOutput("scatter")
+   )
 
  server <- function(input, output) {
 
@@ -60,17 +66,33 @@ scatterDF <-   function (form,data=parent.frame()) {
      dfSelected = NULL
    )
 
-   output$condVar <- renderPlot({
-     if ( is.numeric(df$z)) {
-      qplot(x = z, data = df, geom = "density")
-     } else qplot(x = z, data = df, geom = "bar")
+   output$condVar1 <- renderPlot({
+      if (is.numeric(df$z)) {
+        qplot(x = z, data = df, geom = "density")
+      }
+   })
+
+   output$condVar2 <- renderPlot({
+     if ( ! is.numeric(df$z)) {
+      ggplot(aes(x = z), data = df) + geom_bar(fill = "burlywood")
+     }
    })
 
    observeEvent(input$plot_brush,
                 {
-                  rv$dfSelected <- brushedPoints(df, input$plot_brush, xvar = "z")
+                    rv$dfSelected <- invisible(
+                      brushedPoints(df,
+                                    input$plot_brush, xvar = "z"))
                 }
                 )
+
+   observeEvent(input$plot_click,
+                {
+                  levs <- levels(df$z)
+                  selected <- levs[round(input$plot_click$x)]
+                  rv$dfSelected <- subset(df, z == selected)
+                }
+   )
 
    output$scatter <- renderPlot({
      with(df, plot(x,y))
@@ -88,6 +110,10 @@ scatterDF <-   function (form,data=parent.frame()) {
 #############################
 ## knit the app
 ###########################
+
+ if ( is.numeric(df$z) ) {
+   ui <- ui.numeric
+   } else ui <- ui.factor
 
  shinyApp(ui = ui, server = server)
 
