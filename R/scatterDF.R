@@ -68,13 +68,15 @@ scatterDF <-   function (form,data=parent.frame()) {
 
    output$condVar1 <- renderPlot({
       if (is.numeric(df$z)) {
-        qplot(x = z, data = df, geom = "density")
+        qplot(x = z, data = df, geom = "density") +
+          labs(x = zname)
       }
    })
 
    output$condVar2 <- renderPlot({
      if ( ! is.numeric(df$z)) {
-      ggplot(aes(x = z), data = df) + geom_bar(fill = "burlywood")
+      ggplot(aes(x = z), data = df) + geom_bar(fill = "burlywood") +
+         labs(x = zname)
      }
    })
 
@@ -95,7 +97,7 @@ scatterDF <-   function (form,data=parent.frame()) {
    )
 
    output$scatter <- renderPlot({
-     with(df, plot(x,y))
+     with(df, plot(x,y, xlab = xname, ylab = yname))
      abline(coef(mod))
      small <- rv$dfSelected
      if ( ! is.null(small) ) {
